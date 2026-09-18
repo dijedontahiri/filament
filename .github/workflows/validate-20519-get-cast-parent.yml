@@ -1,0 +1,85 @@
+name: Validate issue 20519 candidate
+
+on:
+  push:
+    branches:
+      - validation/20519-get-cast-parent-99dd
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.repository == 'dijedontahiri/filament'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BASE_SHA: 07481bdc4b6e47f9fc3d7ac8535dcf51dbd05610
+      CANDIDATE_SHA: 99dd9d520f819acfb9590531751c754d5a72db77
+    steps:
+      - name: Checkout immutable candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 99dd9d520f819acfb9590531751c754d5a72db77
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify source identity
+        run: |
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          git diff --check "$BASE_SHA" "$CANDIDATE_SHA"
+          test "$(git diff --name-only "$BASE_SHA" "$CANDIDATE_SHA" | wc -l)" -eq 3
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240
+        with:
+          php-version: '8.5'
+          extensions: mbstring, pdo, pdo_sqlite
+          coverage: none
+
+      - name: Install dependencies
+        run: |
+          composer require "laravel/framework:13.*" "orchestra/testbench:11.*" --no-interaction --no-update
+          composer update --prefer-stable --prefer-dist --no-interaction
+
+      - name: Prove baseline loses the state cast
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=(
+            packages/schemas/src/Components/Concerns/HasChildComponents.php
+            packages/schemas/src/Components/Utilities/Get.php
+          )
+          trap 'git checkout "$CANDIDATE_SHA" -- "${files[@]}"' EXIT
+          for file in "${files[@]}"; do
+            git show "$BASE_SHA:$file" > "$file"
+          done
+          set +e
+          ./vendor/bin/pest --configuration=phpunit.sqlite.xml tests/src/Schemas/Components/Utilities/GetCastedStateTest.php --filter='returns cast state' > /tmp/baseline.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/baseline.log
+          test "$status" -ne 0
+          grep -F 'returns cast state from an existing child schema when `Get` is used by the parent component' /tmp/baseline.log
+          git checkout "$CANDIDATE_SHA" -- "${files[@]}"
+          trap - EXIT
+
+      - name: Run focused candidate regressions
+        run: |
+          ./vendor/bin/pest --configuration=phpunit.sqlite.xml tests/src/Schemas/Components/Utilities/GetCastedStateTest.php tests/src/Schemas/Components/Utilities/GetTest.php
+
+      - name: Run PHPStan
+        run: composer test:phpstan
+
+      - name: Check PHP formatting
+        run: |
+          ./vendor/bin/pint --test packages/schemas/src/Components/Concerns/HasChildComponents.php packages/schemas/src/Components/Utilities/Get.php tests/src/Schemas/Components/Utilities/GetCastedStateTest.php
+
+      - name: Final exact-tree audit
+        if: always()
+        run: |
+          git checkout "$CANDIDATE_SHA" -- packages/schemas/src/Components/Concerns/HasChildComponents.php packages/schemas/src/Components/Utilities/Get.php
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          git diff --exit-code
+          git diff --check "$BASE_SHA" "$CANDIDATE_SHA"
+          git diff --name-only "$BASE_SHA" "$CANDIDATE_SHA"
