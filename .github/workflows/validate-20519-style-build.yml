@@ -1,0 +1,53 @@
+name: Validate issue 20519 style and build
+
+on:
+  push:
+    branches:
+      - validation/20519-style-build-99dd
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.repository == 'dijedontahiri/filament'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CANDIDATE_SHA: 99dd9d520f819acfb9590531751c754d5a72db77
+    steps:
+      - name: Checkout immutable candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 99dd9d520f819acfb9590531751c754d5a72db77
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240
+        with:
+          php-version: '8.5'
+          coverage: none
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 'lts/*'
+          cache: npm
+      - name: Install dependencies
+        run: |
+          composer install --no-interaction --no-scripts
+          npm ci --ignore-scripts
+      - name: Run repository code style
+        run: composer cs
+      - name: Verify style made no tracked changes
+        run: |
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          git diff --exit-code
+          git diff --check
+      - name: Build assets
+        run: npm run build
+      - name: Verify exact source remains clean
+        if: always()
+        run: |
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          git diff --exit-code
+          git diff --check
