@@ -37,6 +37,21 @@ class Get
                 skipComponentsChildContainersWhileSearching: $this->shouldSkipComponentsChildContainersWhileSearching ? static::$skipComponentsChildContainersWhileSearching : [],
             );
 
+        if ((! $component) && $this->shouldSkipComponentsChildContainersWhileSearching) {
+            foreach ($this->component->getExistingChildSchemas() as $childSchema) {
+                $component = $childSchema->getComponentByStatePath(
+                    $path,
+                    withHidden: true,
+                    withAbsoluteStatePath: true,
+                    skipComponentsChildContainersWhileSearching: static::$skipComponentsChildContainersWhileSearching,
+                );
+
+                if ($component) {
+                    break;
+                }
+            }
+        }
+
         try {
             if (! $component) {
                 return data_get($livewire, $path);
