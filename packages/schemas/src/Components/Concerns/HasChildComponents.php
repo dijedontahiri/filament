@@ -27,9 +27,9 @@ trait HasChildComponents
     protected array $cachedChildSchemas = [];
 
     /**
-     * @param  array<Component | Action | ActionGroup | string | Htmlable> | Closure  $components
+     * @param  array<Component | Action | ActionGroup | string | Htmlable> | Component | Action | ActionGroup | string | Htmlable | Closure  $components
      */
-    public function components(array | Closure $components): static
+    public function components(array | Component | Action | ActionGroup | string | Htmlable | Closure $components): static
     {
         $this->childComponents($components);
 
@@ -212,6 +212,23 @@ trait HasChildComponents
     }
 
     /**
+     * @return array<Schema>
+     *
+     * @internal This method is not part of the public API and should not be used.
+     */
+    public function getExistingChildSchemas(): array
+    {
+        $defaultChildSchemas = (($this->cachedDefaultChildSchemas !== null) && $this->areCachedDefaultChildSchemasFresh())
+            ? $this->cachedDefaultChildSchemas
+            : [];
+
+        return [
+            ...$defaultChildSchemas,
+            ...$this->cachedChildSchemas,
+        ];
+    }
+
+    /**
      * Components whose child schemas are derived from state, such as repeaters,
      * can override this method to compare the current state against a snapshot
      * taken when the cache was built, so that the cache invalidates itself when
@@ -275,8 +292,8 @@ trait HasChildComponents
             if (is_array($childComponents)) {
                 $this->childComponents[$key] = array_map(
                     fn (Component | Action | ActionGroup | string | Htmlable $component): Component | Action | ActionGroup | string | Htmlable => match (true) {
-                        $component instanceof Component, $component instanceof Action, $component instanceof ActionGroup => $component->getClone(),
-                        default => $component,
+                        $childComponents instanceof Component, $childComponents instanceof Action, $childComponents instanceof ActionGroup => $childComponents->getClone(),
+                        default => $childComponents,
                     },
                     $childComponents,
                 );
